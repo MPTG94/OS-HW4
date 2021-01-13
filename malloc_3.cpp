@@ -97,33 +97,61 @@ public:
         }
     }
 
+    // Assume memory layout of A B C -> D
+    // if both A B C are free, then A should be the only metadata block, and should point to D, and D should point to A
+    // if both A and B are free, then A should be the metadata block, and should point to C, and C should point to A
+    // if both B and C are free, then B should be the metadata block, and should point to D, and D should point to B
     void MarkAsFree(void *addr) {
         if (head == nullptr) {
             return;
         }
         MallocMetadata *current = head;
-        size_t size_of_prev=0;
         while (current) {
             if (current->mem_address == addr && !current->is_free) {
-                if(current->prev->is_free && current->next->is_free){
+                if (current->prev->is_free && current->next->is_free) {
                     MallocMetadata *prev = current->prev;
                     size_t new_size = prev->size + current->size + current->next->size + 2 * get_metadata_size();
                     prev->size = new_size;
-                    prev
+                    // A will now point to D
+                    prev->next = current->next->next;
+                    // D will not point to A
+                    current->next->next->prev = prev;
+                    num_free_blocks--;
+                    num_free_bytes += 2 * get_metadata_size();
+                    num_allocated_blocks -= 2;
+                    num_allocated_bytes += 2 * get_metadata_size();
+                    num_of_metadata -= 2;
+                } else if (current->next->is_free) {
+                    current->is_free = true;
+                    MallocMetadata *next = current->next;
+                    // B will now point to D
+                    current->next = next->next;
+                    // D will now point to B
+                    next->next->prev = current;
+                    current->size += next->size + get_metadata_size();
+                    num_free_bytes += get_metadata_size();
+                    num_allocated_blocks -= 1;
+                    num_allocated_bytes += get_metadata_size();
+                    num_of_metadata -= 1;
+                } else if (current->prev->is_free) {
+                    MallocMetadata *prev = current->prev;
+                    // Now A will point to C
+                    prev->next = current->next;
+                    // C will now point to A
+                    current->next->prev = prev;
+                    prev->size += current->size + get_metadata_size();
+                    num_free_bytes += get_metadata_size();
+                    num_allocated_blocks -= 1;
+                    num_allocated_bytes += get_metadata_size();
+                    num_of_metadata -= 1;
+                } else {
+                    // A and C are not free, so only free B alone
+                    current->is_free = true;
+                    num_free_blocks++;
+                    num_free_bytes += current->size;
                 }
-                else if(current->next->is_free)
-                {
-
-                }
-                else if(current->prev->is_free){
-
-                }
-                current->is_free = true;
-                num_free_blocks++;
-                num_free_bytes += current->size;
                 return;
             }
-            size_of_prev = current->size;
             current = current->next;
         }
     }
@@ -136,7 +164,7 @@ public:
         }
         MallocMetadata *current = head;
         while (current) {
-            if (current->is_free &&  current->size >= size) {
+            if (current->is_free && current->size >= size) {
                 // Marking the current block as used by the requestor and returning the address
                 current->is_free = false;
                 num_free_blocks--;
@@ -149,11 +177,37 @@ public:
         return nullptr;
     }
 
-    bool is_large_enough(size_t cur_size, site_t new_size){
-        if (cur_size - new_size - mallocList->get_metadata_size() >= 128){
+    bool is_large_enough(size_t cur_size, site_t new_size) {
+        if (cur_size - new_size - mallocList->get_metadata_size() >= 128) {
             return true;
         }
         return false;
+    }
+
+    void *AllocateToWildernessIfPossible(size_t size) {
+        MallocMetadata *current = head;
+        bool wildernessState = true;
+        while (current) {
+            if (current->is_free == true && current != tail) {
+                // this is a free block, not at the tail of the list, so wilderness is not satisfied
+                return nullptr;
+            } else if (current->is_free == true && current == tail) {
+                // this is the only free block, and also the tail, so wilderness is satisfied
+                // need to increase the size of the tail
+                size_t amountToExtend = size - current->size;
+                // Increase the size of the tail
+                void *addr = sbrk(amountToExtend);
+                if (addr == (void *) (-1)) {
+                    return nullptr;
+                }
+                num_free_bytes -= current->size;
+                num_free_blocks--;
+                current->size += amountToExtend;
+                num_allocated_bytes += amountToExtend;
+                return current->mem_address;
+            }
+            current = current->next;
+        }
     }
 
     void *FindLargeEnoughFreeBlockBySize(size_t new_size) {
@@ -190,10 +244,10 @@ public:
         return 0;
     }
 
-    void *split(void* addr,size_t curr_size, size_t new_size){
+    void *split(void *addr, size_t curr_size, size_t new_size) {
         // new meta data need to be at addr + size
-        MallocMetadata* new_meta_data = (MallocMetadata*) addr + new_size;
-        new_meta_data->is_free= true;
+        MallocMetadata *new_meta_data = (MallocMetadata *) addr + new_size;
+        new_meta_data->is_free = true;
         new_meta_data->size = curr_size - new_size - get_metadata_size();
         new_meta_data->mem_address = new_meta_data + get_metadata_size();
         ReplaceTail(new_meta_data);
@@ -233,15 +287,23 @@ void *smalloc(size_t size) {
     if (size == 0 || size > MAX_BLOCK) {
         return nullptr;
     }
+    // Searching for a block big enough to both satisfy the requirement, and have enough size left for a size cut
     void *largeEnoughBlock = mallocList->FindLargeEnoughFreeBlockBySize(size);
-    if (largeEnoughBlock != nullptr){
+    if (largeEnoughBlock != nullptr) {
+        // We found a large enough block, get the size of the new block, and use it to create a new metadata and free block, with the remaining size
         size_t curr_size = mallocList->GetSizeOfBlockByAddress(largeEnoughBlock);
-        void* nAdrr = mallocList->split(largeEnoughBlock, curr_size, size);
+        void *nAdrr = mallocList->split(largeEnoughBlock, curr_size, size);
         reutrn nAdrr;
     }
+    // Just try to find a free block with enough space
     void *nAddr = mallocList->FindFreeBlockBySize(size);
     if (nAddr != nullptr) {
         return nAddr;
+    }
+    // There's no free block that satisfies the size requirement, let's check if a wilderness block exists (the only one that is free + is the tail)
+    void *wilAddr = mallocList->AllocateToWildernessIfPossible(size);
+    if (wilAddr != nullptr) {
+        return wilAddr;
     }
     // There's no free block that satisfies the size requirement, need to allocate a new one
     void *res = mallocList->Insert(size);
