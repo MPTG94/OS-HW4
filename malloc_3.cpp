@@ -228,20 +228,22 @@ public:
         MallocMetadata *current = head;
         while (current) {
             if (current->mem_address == addr && !current->is_free) {
-                if (current->prev->is_free && current->next->is_free) {
+                if (current->prev && current->prev->is_free && current->next && current->next->is_free) {
                     MallocMetadata *prev = current->prev;
                     size_t new_size = prev->size + current->size + current->next->size + 2 * get_metadata_size();
                     prev->size = new_size;
                     // A will now point to D
                     prev->next = current->next->next;
                     // D will not point to A
-                    current->next->next->prev = prev;
+                    if (current->next->next) {
+                        current->next->next->prev = prev;
+                    }
                     num_free_blocks--;
-                    num_free_bytes += 2 * get_metadata_size();
+                    num_free_bytes += current->size + 2 * get_metadata_size();
                     num_allocated_blocks -= 2;
                     num_allocated_bytes += 2 * get_metadata_size();
                     num_of_metadata -= 2;
-                } else if (current->next->is_free) {
+                } else if (current->next && current->next->is_free) {
                     current->is_free = true;
                     MallocMetadata *next = current->next;
                     // B will now point to D
@@ -253,7 +255,7 @@ public:
                     num_allocated_blocks -= 1;
                     num_allocated_bytes += get_metadata_size();
                     num_of_metadata -= 1;
-                } else if (current->prev->is_free) {
+                } else if (current->prev && current->prev->is_free) {
                     MallocMetadata *prev = current->prev;
                     // Now A will point to C
                     prev->next = current->next;
@@ -429,7 +431,8 @@ public:
 
     void *split(void *addr, size_t curr_size, size_t new_size) {
         // new meta data need to be at addr + size
-        MallocMetadata *new_meta_data = (MallocMetadata *) addr + new_size;
+        void *nMetadAddr = (char *) addr + new_size;
+        MallocMetadata *new_meta_data = (MallocMetadata *) nMetadAddr;
         new_meta_data->is_free = true;
         new_meta_data->size = curr_size - new_size - get_metadata_size();
         new_meta_data->mem_address = new_meta_data + get_metadata_size();
@@ -580,32 +583,38 @@ void *srealloc(void *oldp, size_t size) {
 
 // Returns the number of allocated blocks in the heap that are currently free
 size_t _num_free_blocks() {
+    std::cout << "num free blocks is " << mallocList->get_num_free_blocks() << std::endl;
     return mallocList->get_num_free_blocks();
 }
 
 // Returns the number of bytes in all allocated blocks in the heap that are currently free,
 // excluding the bytes used by the meta-data structs.
 size_t _num_free_bytes() {
+    std::cout << "num free bytes is " << mallocList->get_num_free_bytes() << std::endl;
     return mallocList->get_num_free_bytes();
 }
 
 // Returns the overall (free and used) number of allocated blocks in the heap.
 size_t _num_allocated_blocks() {
+    std::cout << "num allocated blocks is " << mallocList->get_num_allocated_blocks() + mmapList->get_num_allocated_blocks() << std::endl;
     return mallocList->get_num_allocated_blocks() + mmapList->get_num_allocated_blocks();
 }
 
 // Returns the overall number (free and used) of allocated bytes in the heap, excluding
 // the bytes used by the meta-data structs.
 size_t _num_allocated_bytes() {
+    std::cout << "num allocated bytes is " << mallocList->get_num_allocated_bytes() + mmapList->get_num_allocated_bytes() << std::endl;
     return mallocList->get_num_allocated_bytes() + mmapList->get_num_allocated_bytes();
 }
 
 // Returns the overall number of meta-data bytes currently in the heap.
 size_t _num_meta_data_bytes() {
+    std::cout << "num metadata bytes is " << mallocList->get_num_metadata_bytes() + mmapList->get_num_metadata_bytes() << std::endl;
     return mallocList->get_num_metadata_bytes() + mmapList->get_num_metadata_bytes();
 }
 
 // Returns the number of bytes of a single meta-data structure in your system.
 size_t _size_meta_data() {
+    std::cout << "metadata size is " << mallocList->get_metadata_size() << std::endl;
     return mallocList->get_metadata_size();
 }
