@@ -37,10 +37,11 @@ class MmapList {
     size_t num_allocated_bytes = 0;
     size_t num_of_metadata = 0;
 
+public:
     void *MmapInsert(size_t size) {
         // Try to allocate the requested size using mmap
         void *mmapAddr = mmap(NULL, size + get_metadata_size(), PROT_WRITE | PROT_READ, MAP_ANONYMOUS | MAP_PRIVATE, -1, 0);
-        if (addr == (void *) (-1)) {
+        if (mmapAddr == (void *) (-1)) {
             // mmap failed
             return nullptr;
         }
@@ -49,7 +50,8 @@ class MmapList {
             // insert list head
             nMeta->size = size;
             nMeta->is_free = false;
-            nMeta->mem_address = mmapAddr + get_metadata_size();
+            void *convAddr = (char *) mmapAddr + get_metadata_size();
+            nMeta->mem_address = convAddr;
             nMeta->prev = nullptr;
             nMeta->next = nullptr;
             head = nMeta;
@@ -60,9 +62,10 @@ class MmapList {
             // insert at end
             nMeta->size = size;
             nMeta->is_free = false;
-            nMeta->mem_address = mmapAddr + get_metadata_size();
+            void *convAddr = (char *) mmapAddr + get_metadata_size();
+            nMeta->mem_address = convAddr;
             ReplaceTail(nMeta);
-            IncreaseCounter(size)
+            IncreaseCounter(size);
             return nMeta->mem_address;
         }
     }
@@ -72,7 +75,7 @@ class MmapList {
         while (current) {
             if (current->mem_address == p) {
                 size_t sizeToFree = current->size + get_metadata_size();
-                void *addressToFree = p - get_metadata_size();
+                void *addressToFree = (char *) p - get_metadata_size();
                 munmap(addressToFree, sizeToFree);
                 if (current == head) {
                     // We need to replace the head
@@ -124,6 +127,18 @@ class MmapList {
         tail->prev->next = tail;
         // this is the tail, so there is nothing after it
         tail->next = nullptr;
+    }
+
+    size_t get_num_allocated_blocks() {
+        return num_allocated_blocks;
+    }
+
+    size_t get_num_allocated_bytes() {
+        return num_allocated_bytes;
+    }
+
+    size_t get_num_metadata_bytes() {
+        return num_of_metadata * get_metadata_size();
     }
 
     size_t get_metadata_size() {
@@ -282,8 +297,8 @@ public:
         return nullptr;
     }
 
-    bool is_large_enough(size_t cur_size, site_t new_size) {
-        if (cur_size - new_size - mallocList->get_metadata_size() >= 128) {
+    bool is_large_enough(size_t cur_size, size_t new_size) {
+        if (cur_size - new_size - get_metadata_size() >= 128) {
             return true;
         }
         return false;
@@ -476,7 +491,7 @@ void *smalloc(size_t size) {
         // We create a split, meaning now the largeEnough address stores the block the user requested, and split will generate a new free block
         // for later use
         void *nAdrr = mallocList->split(largeEnoughBlock, curr_size, size);
-        reutrn largeEnoughBlock;
+        return largeEnoughBlock;
     }
     // Just try to find a free block with enough space
     void *nAddr = mallocList->FindFreeBlockBySize(size);
@@ -536,7 +551,7 @@ void *srealloc(void *oldp, size_t size) {
     // Try to merge with previous block (if possible)
     // Try to merge with next block (if possible)
     // Try to merge with both prev and next (if possible)
-    void *mergeRes = TryMerge(oldp, size);
+    void *mergeRes = mallocList->TryMerge(oldp, size);
     if (mergeRes != nullptr) {
         // should try to split the block if it is large enough (according to challenge #1 definition)
         // nSize is (possibly) very large, but we actually only need size
@@ -576,18 +591,18 @@ size_t _num_free_bytes() {
 
 // Returns the overall (free and used) number of allocated blocks in the heap.
 size_t _num_allocated_blocks() {
-    return mallocList->get_num_allocated_blocks();
+    return mallocList->get_num_allocated_blocks() + mmapList->get_num_allocated_blocks();
 }
 
 // Returns the overall number (free and used) of allocated bytes in the heap, excluding
 // the bytes used by the meta-data structs.
 size_t _num_allocated_bytes() {
-    return mallocList->get_num_allocated_bytes();
+    return mallocList->get_num_allocated_bytes() + mmapList->get_num_allocated_bytes();
 }
 
 // Returns the overall number of meta-data bytes currently in the heap.
 size_t _num_meta_data_bytes() {
-    return mallocList->get_num_metadata_bytes();
+    return mallocList->get_num_metadata_bytes() + mmapList->get_num_metadata_bytes();
 }
 
 // Returns the number of bytes of a single meta-data structure in your system.
