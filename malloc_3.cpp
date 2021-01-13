@@ -7,8 +7,10 @@
 #include <stdio.h>
 #include <cstring>
 #include <iostream>
+#include <sys/mman.h>
 
 #define MAX_BLOCK 100000000
+#define MMAP_MIN_SIZE 128000
 
 class MallocMetadata {
     size_t size;
@@ -24,6 +26,109 @@ class MallocMetadata {
     MallocMetadata(size_t size, void *addr, MallocMetadata *prev) : size(size), is_free(false), mem_address(addr), prev(prev), next(nullptr) {}
 
     friend class List;
+
+    friend class MmapList;
+};
+
+class MmapList {
+    MallocMetadata *head = nullptr;
+    MallocMetadata *tail = nullptr;
+    size_t num_allocated_blocks = 0;
+    size_t num_allocated_bytes = 0;
+    size_t num_of_metadata = 0;
+
+    void *MmapInsert(size_t size) {
+        // Try to allocate the requested size using mmap
+        void *mmapAddr = mmap(NULL, size + get_metadata_size(), PROT_WRITE | PROT_READ, MAP_ANONYMOUS | MAP_PRIVATE, -1, 0);
+        if (addr == (void *) (-1)) {
+            // mmap failed
+            return nullptr;
+        }
+        MallocMetadata *nMeta = (MallocMetadata *) mmapAddr;
+        if (head == nullptr) {
+            // insert list head
+            nMeta->size = size;
+            nMeta->is_free = false;
+            nMeta->mem_address = mmapAddr + get_metadata_size();
+            nMeta->prev = nullptr;
+            nMeta->next = nullptr;
+            head = nMeta;
+            tail = nMeta;
+            IncreaseCounter(size);
+            return nMeta->mem_address;
+        } else {
+            // insert at end
+            nMeta->size = size;
+            nMeta->is_free = false;
+            nMeta->mem_address = mmapAddr + get_metadata_size();
+            ReplaceTail(nMeta);
+            IncreaseCounter(size)
+            return nMeta->mem_address;
+        }
+    }
+
+    void MmapFree(void *p) {
+        MallocMetadata *current = head;
+        while (current) {
+            if (current->mem_address == p) {
+                size_t sizeToFree = current->size + get_metadata_size();
+                void *addressToFree = p - get_metadata_size();
+                munmap(addressToFree, sizeToFree);
+                if (current == head) {
+                    // We need to replace the head
+                    if (head->next) {
+                        head = head->next;
+                        head->prev = nullptr;
+                    } else {
+                        // The head is the only node in the list
+                        head = nullptr;
+                    }
+                } else {
+                    // Need to remove a node from the middle/end of the list
+                    if (current->next) {
+                        // We are removing a node from the middle of the list
+                        MallocMetadata *prev = current->prev;
+                        MallocMetadata *next = current->next;
+                        prev->next = next;
+                        next->prev = prev;
+                    } else {
+                        // We are removing a node from the end of the list
+                        MallocMetadata *prev = current->prev;
+                        prev->next = nullptr;
+                    }
+                }
+                DecreaseCounter(sizeToFree);
+                return;
+            }
+        }
+    }
+
+    void IncreaseCounter(size_t size) {
+        num_of_metadata++;
+        num_allocated_blocks++;
+        num_allocated_bytes += size;
+    }
+
+    void DecreaseCounter(size_t size) {
+        num_of_metadata--;
+        num_allocated_blocks--;
+        num_allocated_bytes -= size;
+    }
+
+    void ReplaceTail(MallocMetadata *nTail) {
+        // mark prev of new tail as the old tail
+        nTail->prev = tail;
+        // mark new tail as tail
+        tail = nTail;
+        // mark the next of the previous tail as the current tail
+        tail->prev->next = tail;
+        // this is the tail, so there is nothing after it
+        tail->next = nullptr;
+    }
+
+    size_t get_metadata_size() {
+        return sizeof(MallocMetadata);
+    }
 };
 
 class List {
@@ -244,6 +349,69 @@ public:
         return 0;
     }
 
+    bool IsEmpty() {
+        return head == nullptr;
+    }
+
+    // Try to merge with previous block (if possible)
+    // Try to merge with next block (if possible)
+    // Try to merge with both prev and next (if possible)
+    void *TryMerge(void *oldp, size_t nSize) {
+        MallocMetadata *current = head;
+        while (current) {
+            if (current->mem_address == oldp) {
+                // Found the block that needs to be increased, we previously checked if we already satisfy the new requirement, so no need to try
+                // just try and merge according to cases
+                MallocMetadata *prev = current->prev;
+                MallocMetadata *next = current->next;
+                if (prev->is_free && prev->size + current->size + get_metadata_size() >= nSize) {
+                    // Prev and current together are enough
+                    prev->is_free = false;
+                    prev->next = current->next;
+                    current->next->prev = prev;
+                    // need to update counters
+                    num_free_blocks--;
+                    num_free_bytes -= (prev->size + get_metadata_size());
+                    num_allocated_bytes += get_metadata_size();
+                    num_allocated_blocks--;
+                    num_of_metadata--;
+                    prev->size += current->size + get_metadata_size();
+                    // need to do memcopy
+                    memcpy(prev->mem_address, oldp, current->size);
+                    return prev->mem_address;
+                } else if (next->is_free && next->size + current->size + get_metadata_size() >= nSize) {
+                    // next and current together are enough
+                    current->next = next->next;
+                    next->next->prev = current;
+                    // need to update counters
+                    num_free_blocks--;
+                    num_free_bytes -= (next->size + get_metadata_size());
+                    num_allocated_bytes += get_num_metadata_bytes();
+                    num_allocated_blocks--;
+                    num_of_metadata--;
+                    current->size += next->size + get_metadata_size();
+                    // No need for memcpy, data is already in place
+                    return current->mem_address;
+                } else if (prev->is_free && next->is_free && prev->size + next->size + current->size + 2 * get_metadata_size() >= nSize) {
+                    // all 3 blocks together are enough
+                    prev->is_free = false;
+                    prev->next = next->next;
+                    next->next->prev = prev;
+                    // need to update counters
+                    num_free_blocks -= 2;
+                    num_free_bytes -= (prev->size + next->size + 2 * get_metadata_size());
+                    num_allocated_bytes += 2 * get_metadata_size();
+                    num_allocated_blocks -= 2;
+                    num_of_metadata -= 2;
+                    prev->size += current->size + next->size + 2 * get_metadata_size();
+                    // need to do memcpy
+                    memcpy(prev->mem_address, oldp, current->size);
+                    return prev->mem_address;
+                }
+            }
+        }
+    }
+
     void *split(void *addr, size_t curr_size, size_t new_size) {
         // new meta data need to be at addr + size
         MallocMetadata *new_meta_data = (MallocMetadata *) addr + new_size;
@@ -282,18 +450,33 @@ public:
 };
 
 List *mallocList = (List *) sbrk(sizeof(List));
+MmapList *mmapList = (MmapList *) sbrk(sizeof(MmapList));
 
+/**
+ * Action order:
+ * 1. Will try to find a large enough block to both allocate the space, and also split into two blocks
+ * 2. Will try to find a free block with the requested size of more
+ * 3. Will try to allocate to the wilderness block if it exists (the tail is the only free one)
+ * 4. Will try to normally allocate by creating a new tail and increasing sbrk
+ * @param size The size of the new block
+ * @return The address of the allocated block
+ */
 void *smalloc(size_t size) {
     if (size == 0 || size > MAX_BLOCK) {
         return nullptr;
+    }
+    if (size >= MMAP_MIN_SIZE) {
+        return mmapList->MmapInsert(size);
     }
     // Searching for a block big enough to both satisfy the requirement, and have enough size left for a size cut
     void *largeEnoughBlock = mallocList->FindLargeEnoughFreeBlockBySize(size);
     if (largeEnoughBlock != nullptr) {
         // We found a large enough block, get the size of the new block, and use it to create a new metadata and free block, with the remaining size
         size_t curr_size = mallocList->GetSizeOfBlockByAddress(largeEnoughBlock);
+        // We create a split, meaning now the largeEnough address stores the block the user requested, and split will generate a new free block
+        // for later use
         void *nAdrr = mallocList->split(largeEnoughBlock, curr_size, size);
-        reutrn nAdrr;
+        reutrn largeEnoughBlock;
     }
     // Just try to find a free block with enough space
     void *nAddr = mallocList->FindFreeBlockBySize(size);
@@ -329,7 +512,12 @@ void sfree(void *p) {
     if (p == nullptr) {
         return;
     }
-    mallocList->MarkAsFree(p);
+    if (mallocList->GetSizeOfBlockByAddress(p) != 0) {
+        mallocList->MarkAsFree(p);
+    } else {
+        // need to try and free from mmap list
+        mmapList->MmapFree(p);
+    }
 }
 
 void *srealloc(void *oldp, size_t size) {
@@ -345,6 +533,24 @@ void *srealloc(void *oldp, size_t size) {
         // The current block is already big enough to hold the requested size
         return oldp;
     }
+    // Try to merge with previous block (if possible)
+    // Try to merge with next block (if possible)
+    // Try to merge with both prev and next (if possible)
+    void *mergeRes = TryMerge(oldp, size);
+    if (mergeRes != nullptr) {
+        // should try to split the block if it is large enough (according to challenge #1 definition)
+        // nSize is (possibly) very large, but we actually only need size
+        size_t nSize = mallocList->GetSizeOfBlockByAddress(mergeRes);
+        if (mallocList->is_large_enough(nSize, size)) {
+            // here we need to split, so merge res will hold the data that was realloc'd, and after it in memory there will be a free block
+            // that is at least 128kb in size
+            mallocList->split(mergeRes, nSize, size);
+        }
+        return mergeRes;
+    }
+
+    // Can't use merge, will call smalloc, and smalloc will try to find a free block that will satisfy the requirement, if not,
+    // it will check if the wilderness block is an option, and if not it will just resort to a standard allocation
     void *nAddr = smalloc(size);
     if (nAddr == nullptr) {
         // Allocation of new block failed
