@@ -13,6 +13,9 @@
 #define MMAP_MIN_SIZE 128000
 
 class MallocMetadata {
+    // TODO: ===============================================================
+    // TODO: change back to size_t
+    // TODO: ===============================================================
     int size;
     bool is_free;
     void *mem_address;
