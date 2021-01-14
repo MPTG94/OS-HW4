@@ -82,13 +82,13 @@ void malloc2_test_01() {
 void malloc3_test_01() {
 
     char *first = (char *) smalloc(150);
-    std::cout << "addr of first: " << (void *) first << std::endl;
+    //std::cout << "addr of first: " << (void *) first << std::endl;
     assert(first);
     char *second = (char *) smalloc(150);
-    std::cout << "addr of second: " << (void *) second << std::endl;
+    //std::cout << "addr of second: " << (void *) second << std::endl;
     assert(second);
     char *third = (char *) smalloc(150);
-    std::cout << "addr of third: " << (void *) third << std::endl;
+    //std::cout << "addr of third: " << (void *) third << std::endl;
     assert(third);
     assert(_num_free_blocks() == 0);
     assert(_num_free_bytes() == 0);

@@ -98,6 +98,7 @@ public:
                         // We are removing a node from the end of the list
                         MallocMetadata *prev = current->prev;
                         prev->next = nullptr;
+                        tail = prev;
                     }
                 }
                 DecreaseCounter(sizeToFree);
@@ -243,24 +244,36 @@ public:
                     num_allocated_blocks -= 2;
                     num_allocated_bytes += 2 * get_metadata_size();
                     num_of_metadata -= 2;
+                    if(current->next == tail){
+                        tail = prev;
+                    }
                 } else if (current->next && current->next->is_free) {
                     current->is_free = true;
                     MallocMetadata *next = current->next;
                     // B will now point to D
                     current->next = next->next;
                     // D will now point to B
-                    next->next->prev = current;
+                    if(next->next){
+                        next->next->prev = current;
+                    }
                     current->size += next->size + get_metadata_size();
                     num_free_bytes += get_metadata_size();
                     num_allocated_blocks -= 1;
                     num_allocated_bytes += get_metadata_size();
                     num_of_metadata -= 1;
+                    if(next == tail){
+                        tail = current;
+                    }
                 } else if (current->prev && current->prev->is_free) {
                     MallocMetadata *prev = current->prev;
                     // Now A will point to C
                     prev->next = current->next;
                     // C will now point to A
-                    current->next->prev = prev;
+                    if(current->next){
+                        if(current->next->prev){
+                            current->next->prev = prev;
+                        }
+                    }
                     prev->size += current->size + get_metadata_size();
                     num_free_bytes += get_metadata_size();
                     num_allocated_blocks -= 1;
@@ -300,7 +313,7 @@ public:
     }
 
     bool is_large_enough(size_t cur_size, size_t new_size) {
-        if (cur_size - new_size - get_metadata_size() >= 128) {
+        if (int(cur_size) - int(new_size) - int(get_metadata_size()) >= 128) {
             return true;
         }
         return false;
@@ -342,8 +355,8 @@ public:
             if (current->is_free && is_large_enough(current->size, new_size)) {
                 // Marking the current block as used by the requestor and returning the address
                 current->is_free = false;
-                current->size = new_size;
-                num_free_bytes -= current->size;
+                //current->size = new_size;
+                num_free_bytes -= new_size;
                 return current->mem_address;
             }
             current = current->next;
@@ -395,6 +408,10 @@ public:
                     prev->size += current->size + get_metadata_size();
                     // need to do memcopy
                     memcpy(prev->mem_address, oldp, current->size);
+                    if(next == tail){
+                        //need to change tail ptr
+                        tail = prev;
+                    }
                     return prev->mem_address;
                 } else if (next->is_free && next->size + current->size + get_metadata_size() >= nSize) {
                     // next and current together are enough
@@ -407,6 +424,10 @@ public:
                     num_allocated_blocks--;
                     num_of_metadata--;
                     current->size += next->size + get_metadata_size();
+                    if(next == tail){
+                        //need to change tail ptr
+                        tail = current;
+                    }
                     // No need for memcpy, data is already in place
                     return current->mem_address;
                 } else if (prev->is_free && next->is_free && prev->size + next->size + current->size + 2 * get_metadata_size() >= nSize) {
@@ -439,7 +460,18 @@ public:
         ReplaceTail(new_meta_data);
         num_of_metadata++;
         num_free_bytes -= get_metadata_size();
+        num_allocated_blocks++;
         return new_meta_data->mem_address;
+    }
+
+    void reSizeByAdd(void* add, size_t newSize){
+        MallocMetadata* current = head;
+        while (current){
+            if (current->mem_address == add){
+                current->size = newSize;
+            }
+            current = current->next;
+        }
     }
 
     size_t get_num_free_blocks() {
@@ -494,6 +526,7 @@ void *smalloc(size_t size) {
         // We create a split, meaning now the largeEnough address stores the block the user requested, and split will generate a new free block
         // for later use
         void *nAdrr = mallocList->split(largeEnoughBlock, curr_size, size);
+        mallocList->reSizeByAdd(largeEnoughBlock, size);
         return largeEnoughBlock;
     }
     // Just try to find a free block with enough space
