@@ -13,7 +13,7 @@
 #define MMAP_MIN_SIZE 128000
 
 class MallocMetadata {
-    size_t size;
+    int size;
     bool is_free;
     void *mem_address;
     MallocMetadata *next;
@@ -30,137 +30,121 @@ class MallocMetadata {
     friend class MmapList;
 };
 
-class MmapList {
-    MallocMetadata *head = nullptr;
-    MallocMetadata *tail = nullptr;
-    size_t num_allocated_blocks = 0;
-    size_t num_allocated_bytes = 0;
-    size_t num_of_metadata = 0;
-
-public:
-    void *MmapInsert(size_t size) {
-        // Try to allocate the requested size using mmap
-        void *mmapAddr = mmap(NULL, size + get_metadata_size(), PROT_WRITE | PROT_READ, MAP_ANONYMOUS | MAP_PRIVATE, -1, 0);
-        if (mmapAddr == (void *) (-1)) {
-            // mmap failed
-            return nullptr;
-        }
-        MallocMetadata *nMeta = (MallocMetadata *) mmapAddr;
-        if (head == nullptr) {
-            // insert list head
-            nMeta->size = size;
-            nMeta->is_free = false;
-            void *convAddr = (char *) mmapAddr + get_metadata_size();
-            nMeta->mem_address = convAddr;
-            nMeta->prev = nullptr;
-            nMeta->next = nullptr;
-            head = nMeta;
-            tail = nMeta;
-            IncreaseCounter(size);
-            return nMeta->mem_address;
-        } else {
-            // insert at end
-            nMeta->size = size;
-            nMeta->is_free = false;
-            void *convAddr = (char *) mmapAddr + get_metadata_size();
-            nMeta->mem_address = convAddr;
-            ReplaceTail(nMeta);
-            IncreaseCounter(size);
-            return nMeta->mem_address;
-        }
-    }
-
-    void MmapFree(void *p) {
-        MallocMetadata *current = head;
-        while (current) {
-            if (current->mem_address == p) {
-                size_t sizeToFree = current->size + get_metadata_size();
-                void *addressToFree = (char *) p - get_metadata_size();
-                munmap(addressToFree, sizeToFree);
-                if (current == head) {
-                    // We need to replace the head
-                    if (head->next) {
-                        head = head->next;
-                        head->prev = nullptr;
-                    } else {
-                        // The head is the only node in the list
-                        head = nullptr;
-                    }
-                } else {
-                    // Need to remove a node from the middle/end of the list
-                    if (current->next) {
-                        // We are removing a node from the middle of the list
-                        MallocMetadata *prev = current->prev;
-                        MallocMetadata *next = current->next;
-                        prev->next = next;
-                        next->prev = prev;
-                    } else {
-                        // We are removing a node from the end of the list
-                        MallocMetadata *prev = current->prev;
-                        prev->next = nullptr;
-                        tail = prev;
-                    }
-                }
-                DecreaseCounter(sizeToFree);
-                return;
-            }
-        }
-    }
-
-    void IncreaseCounter(size_t size) {
-        num_of_metadata++;
-        num_allocated_blocks++;
-        num_allocated_bytes += size;
-    }
-
-    void DecreaseCounter(size_t size) {
-        num_of_metadata--;
-        num_allocated_blocks--;
-        num_allocated_bytes -= size;
-    }
-
-    void ReplaceTail(MallocMetadata *nTail) {
-        // mark prev of new tail as the old tail
-        nTail->prev = tail;
-        // mark new tail as tail
-        tail = nTail;
-        // mark the next of the previous tail as the current tail
-        tail->prev->next = tail;
-        // this is the tail, so there is nothing after it
-        tail->next = nullptr;
-    }
-
-    size_t get_num_allocated_blocks() {
-        return num_allocated_blocks;
-    }
-
-    size_t get_num_allocated_bytes() {
-        return num_allocated_bytes;
-    }
-
-    size_t get_num_metadata_bytes() {
-        return num_of_metadata * get_metadata_size();
-    }
-
-    size_t get_metadata_size() {
-        return sizeof(MallocMetadata);
-    }
-};
+//class MmapList {
+//    MallocMetadata *head = nullptr;
+//    MallocMetadata *tail = nullptr;
+//
+//public:
+//    void *MmapInsert(size_t size) {
+//        // Try to allocate the requested size using mmap
+//        void *mmapAddr = mmap(NULL, size + get_metadata_size(), PROT_WRITE | PROT_READ, MAP_ANONYMOUS | MAP_PRIVATE, -1, 0);
+//        if (mmapAddr == (void *) (-1)) {
+//            // mmap failed
+//            return nullptr;
+//        }
+//        MallocMetadata *nMeta = (MallocMetadata *) mmapAddr;
+//        if (head == nullptr) {
+//            // insert list head
+//            nMeta->size = size;
+//            nMeta->is_free = false;
+//            void *convAddr = (char *) mmapAddr + get_metadata_size();
+//            nMeta->mem_address = convAddr;
+//            nMeta->prev = nullptr;
+//            nMeta->next = nullptr;
+//            head = nMeta;
+//            tail = nMeta;
+//            return nMeta->mem_address;
+//        } else {
+//            // insert at end
+//            nMeta->size = size;
+//            nMeta->is_free = false;
+//            void *convAddr = (char *) mmapAddr + get_metadata_size();
+//            nMeta->mem_address = convAddr;
+//            ReplaceTail(nMeta);
+//            return nMeta->mem_address;
+//        }
+//    }
+//
+//    void MmapFree(void *p) {
+//        MallocMetadata *current = head;
+//        while (current) {
+//            if (current->mem_address == p) {
+//                size_t sizeToFree = current->size + get_metadata_size();
+//                void *addressToFree = (char *) p - get_metadata_size();
+//                munmap(addressToFree, sizeToFree);
+//                if (current == head) {
+//                    // We need to replace the head
+//                    if (head->next) {
+//                        head = head->next;
+//                        head->prev = nullptr;
+//                    } else {
+//                        // The head is the only node in the list
+//                        head = nullptr;
+//                    }
+//                } else {
+//                    // Need to remove a node from the middle/end of the list
+//                    if (current->next) {
+//                        // We are removing a node from the middle of the list
+//                        MallocMetadata *prev = current->prev;
+//                        MallocMetadata *next = current->next;
+//                        prev->next = next;
+//                        next->prev = prev;
+//                    } else {
+//                        // We are removing a node from the end of the list
+//                        MallocMetadata *prev = current->prev;
+//                        prev->next = nullptr;
+//                        tail = prev;
+//                    }
+//                }
+//                return;
+//            }
+//        }
+//    }
+//
+//    void ReplaceTail(MallocMetadata *nTail) {
+//        // mark prev of new tail as the old tail
+//        nTail->prev = tail;
+//        // mark new tail as tail
+//        tail = nTail;
+//        // mark the next of the previous tail as the current tail
+//        tail->prev->next = tail;
+//        // this is the tail, so there is nothing after it
+//        tail->next = nullptr;
+//    }
+//
+//    size_t get_num_allocated_blocks() {
+//        MallocMetadata *current = head;
+//        size_t sum = 0;
+//        while (current) {
+//            sum++;
+//            current = current->next;
+//        }
+//        return sum;
+//    }
+//
+//    size_t get_num_allocated_bytes() {
+//        MallocMetadata *current = head;
+//        size_t sum = 0;
+//        while (current) {
+//            sum += current->size;
+//            current = current->next;
+//        }
+//        return sum;
+//    }
+//
+//    size_t get_num_metadata_bytes() {
+//        // Every allocated block has a metadata associated with it
+//        return get_num_allocated_blocks() * get_metadata_size();
+//    }
+//
+//    size_t get_metadata_size() {
+//        return sizeof(MallocMetadata);
+//    }
+//};
 
 class List {
     MallocMetadata *head = nullptr;
     MallocMetadata *tail = nullptr;
-    size_t num_free_blocks = 0;
-    size_t num_free_bytes = 0;
-    size_t num_allocated_blocks = 0;
-    size_t num_allocated_bytes = 0;
-    size_t num_of_metadata = 0;
-
-    void IncreaseCounter(size_t size) {
-        num_of_metadata++;
-        num_allocated_blocks++;
-        num_allocated_bytes += size;
-    }
 
     void ReplaceTail(MallocMetadata *nTail) {
         // mark prev of new tail as the old tail
@@ -174,8 +158,7 @@ class List {
     }
 
 public:
-    List() : head(nullptr), tail(nullptr), num_free_blocks(0), num_free_bytes(0), num_allocated_blocks(0), num_allocated_bytes(0),
-             num_of_metadata(0) {}
+    List() : head(nullptr), tail(nullptr) {}
 
     void *Insert(size_t size) {
         if (head == nullptr) {
@@ -195,7 +178,6 @@ public:
                 nHead->next = nullptr;
                 head = nHead;
                 tail = nHead;
-                IncreaseCounter(size);
                 return addr;
             }
         } else {
@@ -212,7 +194,6 @@ public:
                 nTail->is_free = false;
                 nTail->mem_address = addr;
                 ReplaceTail(nTail);
-                IncreaseCounter(size);
                 return addr;
             }
         }
@@ -239,12 +220,7 @@ public:
                     if (current->next->next) {
                         current->next->next->prev = prev;
                     }
-                    num_free_blocks--;
-                    num_free_bytes += current->size + 2 * get_metadata_size();
-                    num_allocated_blocks -= 2;
-                    num_allocated_bytes += 2 * get_metadata_size();
-                    num_of_metadata -= 2;
-                    if(current->next == tail){
+                    if (current->next == tail) {
                         tail = prev;
                     }
                 } else if (current->next && current->next->is_free) {
@@ -253,15 +229,11 @@ public:
                     // B will now point to D
                     current->next = next->next;
                     // D will now point to B
-                    if(next->next){
+                    if (next->next) {
                         next->next->prev = current;
                     }
                     current->size += next->size + get_metadata_size();
-                    num_free_bytes += get_metadata_size();
-                    num_allocated_blocks -= 1;
-                    num_allocated_bytes += get_metadata_size();
-                    num_of_metadata -= 1;
-                    if(next == tail){
+                    if (next == tail) {
                         tail = current;
                     }
                 } else if (current->prev && current->prev->is_free) {
@@ -269,21 +241,15 @@ public:
                     // Now A will point to C
                     prev->next = current->next;
                     // C will now point to A
-                    if(current->next){
-                        if(current->next->prev){
+                    if (current->next) {
+                        if (current->next->prev) {
                             current->next->prev = prev;
                         }
                     }
                     prev->size += current->size + get_metadata_size();
-                    num_free_bytes += get_metadata_size();
-                    num_allocated_blocks -= 1;
-                    num_allocated_bytes += get_metadata_size();
-                    num_of_metadata -= 1;
                 } else {
                     // A and C are not free, so only free B alone
                     current->is_free = true;
-                    num_free_blocks++;
-                    num_free_bytes += current->size;
                 }
                 return;
             }
@@ -302,8 +268,6 @@ public:
             if (current->is_free && current->size >= size) {
                 // Marking the current block as used by the requestor and returning the address
                 current->is_free = false;
-                num_free_blocks--;
-                num_free_bytes -= current->size;
                 return current->mem_address;
             }
             current = current->next;
@@ -335,10 +299,8 @@ public:
                 if (addr == (void *) (-1)) {
                     return nullptr;
                 }
-                num_free_bytes -= current->size;
-                num_free_blocks--;
                 current->size += amountToExtend;
-                num_allocated_bytes += amountToExtend;
+                current->is_free = false;
                 return current->mem_address;
             }
             current = current->next;
@@ -356,7 +318,6 @@ public:
                 // Marking the current block as used by the requestor and returning the address
                 current->is_free = false;
                 //current->size = new_size;
-                num_free_bytes -= new_size;
                 return current->mem_address;
             }
             current = current->next;
@@ -394,59 +355,49 @@ public:
                 // just try and merge according to cases
                 MallocMetadata *prev = current->prev;
                 MallocMetadata *next = current->next;
-                if (prev->is_free && prev->size + current->size + get_metadata_size() >= nSize) {
+                if (prev && prev->is_free && prev->size + current->size + get_metadata_size() >= nSize) {
                     // Prev and current together are enough
                     prev->is_free = false;
                     prev->next = current->next;
-                    current->next->prev = prev;
-                    // need to update counters
-                    num_free_blocks--;
-                    num_free_bytes -= (prev->size + get_metadata_size());
-                    num_allocated_bytes += get_metadata_size();
-                    num_allocated_blocks--;
-                    num_of_metadata--;
+                    if (prev->next) {
+                        // Current is not the tail
+                        current->next->prev = prev;
+                    } else {
+                        // Current is the tail, need to update list tail
+                        tail = prev;
+                    }
                     prev->size += current->size + get_metadata_size();
                     // need to do memcopy
                     memcpy(prev->mem_address, oldp, current->size);
-                    if(next == tail){
-                        //need to change tail ptr
-                        tail = prev;
-                    }
+//                    if (next == tail) {
+//                        //need to change tail ptr
+//                        tail = prev;
+//                    }
                     return prev->mem_address;
-                } else if (next->is_free && next->size + current->size + get_metadata_size() >= nSize) {
+                } else if (next && next->is_free && next->size + current->size + get_metadata_size() >= nSize) {
                     // next and current together are enough
                     current->next = next->next;
                     next->next->prev = current;
-                    // need to update counters
-                    num_free_blocks--;
-                    num_free_bytes -= (next->size + get_metadata_size());
-                    num_allocated_bytes += get_num_metadata_bytes();
-                    num_allocated_blocks--;
-                    num_of_metadata--;
                     current->size += next->size + get_metadata_size();
-                    if(next == tail){
+                    if (next == tail) {
                         //need to change tail ptr
                         tail = current;
                     }
                     // No need for memcpy, data is already in place
                     return current->mem_address;
-                } else if (prev->is_free && next->is_free && prev->size + next->size + current->size + 2 * get_metadata_size() >= nSize) {
+                } else if (prev && prev->is_free && next && next->is_free &&
+                           prev->size + next->size + current->size + 2 * get_metadata_size() >= nSize) {
                     // all 3 blocks together are enough
                     prev->is_free = false;
                     prev->next = next->next;
                     next->next->prev = prev;
-                    // need to update counters
-                    num_free_blocks -= 2;
-                    num_free_bytes -= (prev->size + next->size + 2 * get_metadata_size());
-                    num_allocated_bytes += 2 * get_metadata_size();
-                    num_allocated_blocks -= 2;
-                    num_of_metadata -= 2;
                     prev->size += current->size + next->size + 2 * get_metadata_size();
                     // need to do memcpy
                     memcpy(prev->mem_address, oldp, current->size);
                     return prev->mem_address;
                 }
             }
+            current = current->next;
         }
     }
 
@@ -458,40 +409,132 @@ public:
         new_meta_data->size = curr_size - new_size - get_metadata_size();
         new_meta_data->mem_address = new_meta_data + get_metadata_size();
         ReplaceTail(new_meta_data);
-        num_of_metadata++;
-        num_free_bytes -= get_metadata_size();
-        num_allocated_blocks++;
         return new_meta_data->mem_address;
     }
 
-    void reSizeByAdd(void* add, size_t newSize){
-        MallocMetadata* current = head;
-        while (current){
-            if (current->mem_address == add){
+    void reSizeByAdd(void *add, size_t newSize) {
+        MallocMetadata *current = head;
+        while (current) {
+            if (current->mem_address == add) {
                 current->size = newSize;
             }
             current = current->next;
         }
     }
 
+    void *MmapInsert(size_t size) {
+        // Try to allocate the requested size using mmap
+        void *mmapAddr = mmap(NULL, size + get_metadata_size(), PROT_WRITE | PROT_READ, MAP_ANONYMOUS | MAP_PRIVATE, -1, 0);
+        if (mmapAddr == (void *) (-1)) {
+            // mmap failed
+            return nullptr;
+        }
+        MallocMetadata *nMeta = (MallocMetadata *) mmapAddr;
+        if (head == nullptr) {
+            // insert list head
+            nMeta->size = size;
+            nMeta->is_free = false;
+            void *convAddr = (char *) mmapAddr + get_metadata_size();
+            nMeta->mem_address = convAddr;
+            nMeta->prev = nullptr;
+            nMeta->next = nullptr;
+            head = nMeta;
+            tail = nMeta;
+            return nMeta->mem_address;
+        } else {
+            // insert at end
+            nMeta->size = size;
+            nMeta->is_free = false;
+            void *convAddr = (char *) mmapAddr + get_metadata_size();
+            nMeta->mem_address = convAddr;
+            ReplaceTail(nMeta);
+            return nMeta->mem_address;
+        }
+    }
+
+    void MmapFree(void *p) {
+        MallocMetadata *current = head;
+        while (current) {
+            if (current->mem_address == p) {
+                size_t sizeToFree = current->size + get_metadata_size();
+                void *addressToFree = (char *) p - get_metadata_size();
+                if (current == head) {
+                    // We need to replace the head
+                    if (head->next) {
+                        head = head->next;
+                        head->prev = nullptr;
+                    } else {
+                        // The head is the only node in the list
+                        head = nullptr;
+                    }
+                } else {
+                    // Need to remove a node from the middle/end of the list
+                    if (current->next) {
+                        // We are removing a node from the middle of the list
+                        MallocMetadata *prev = current->prev;
+                        MallocMetadata *next = current->next;
+                        prev->next = next;
+                        next->prev = prev;
+                    } else {
+                        // We are removing a node from the end of the list
+                        MallocMetadata *prev = current->prev;
+                        prev->next = nullptr;
+                        tail = prev;
+                    }
+                }
+                munmap(addressToFree, sizeToFree);
+                return;
+            }
+            current = current->next;
+        }
+    }
+
     size_t get_num_free_blocks() {
-        return num_free_blocks;
+        size_t count = 0;
+        MallocMetadata *current = head;
+        while (current) {
+            if (current->is_free) {
+                count++;
+            }
+            current = current->next;
+        }
+        return count;
     }
 
     size_t get_num_free_bytes() {
-        return num_free_bytes;
+        size_t sum = 0;
+        MallocMetadata *current = head;
+        while (current) {
+            if (current->is_free) {
+                sum += current->size;
+            }
+            current = current->next;
+        }
+        return sum;
     }
 
     size_t get_num_allocated_blocks() {
-        return num_allocated_blocks;
+        size_t sum = 0;
+        MallocMetadata *current = head;
+        while (current) {
+            sum++;
+            current = current->next;
+        }
+        return sum;
     }
 
     size_t get_num_allocated_bytes() {
-        return num_allocated_bytes;
+        size_t sum = 0;
+        MallocMetadata *current = head;
+        while (current) {
+            sum += current->size;
+            current = current->next;
+        }
+        return sum;
     }
 
     size_t get_num_metadata_bytes() {
-        return num_of_metadata * get_metadata_size();
+        return get_num_allocated_blocks() * get_metadata_size();
     }
 
     size_t get_metadata_size() {
@@ -500,7 +543,7 @@ public:
 };
 
 List *mallocList = (List *) sbrk(sizeof(List));
-MmapList *mmapList = (MmapList *) sbrk(sizeof(MmapList));
+List *mmapList = (List *) sbrk(sizeof(List));
 
 /**
  * Action order:
@@ -578,6 +621,16 @@ void *srealloc(void *oldp, size_t size) {
     if (oldp == nullptr) {
         // No real previous address, just allocate a new one with the requested size
         return smalloc(size);
+    }
+    if (size >= MMAP_MIN_SIZE) {
+        void* nAddr = mmapList->MmapInsert(size);
+        if (nAddr == nullptr) {
+            return nullptr;
+        }
+        size_t oldSize = mmapList->GetSizeOfBlockByAddress(oldp);
+        memcpy(nAddr, oldp, oldSize);
+        mmapList->MmapFree(oldp);
+        return nAddr;
     }
     size_t currentSize = mallocList->GetSizeOfBlockByAddress(oldp);
     if (currentSize >= size) {

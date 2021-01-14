@@ -235,6 +235,7 @@ void malloc3_test_02() {
     forth_sbrk = (char *) srealloc(forth_sbrk, 160);
     assert(forth_sbrk);
     assert(_num_free_bytes() == 50);
+    // Fail here, some issue with merge sizes and expected free blocks
     assert(_num_allocated_blocks() == 4);
     sfree(first_sbrk);
     assert(_num_free_blocks() == 2);
@@ -278,6 +279,7 @@ void malloc3_test_03() {
     second_mmap = (char *) srealloc(second_mmap, 200000);
     assert(_num_allocated_bytes() == 350000);
     second_mmap = (char *) srealloc(second_mmap, 140000);
+    // Should realloc make an existing block smaller? (Piazza)
     assert(_num_allocated_bytes() == 290000);
     sfree(first_mmap);
 
@@ -288,9 +290,9 @@ int main() {
 
     // check it for malloc2 before this test
     //malloc2_test_01();
-    malloc3_test_01();
+    //malloc3_test_01();
     //malloc3_test_02();
-    //malloc3_test_03();
+    malloc3_test_03();
 
 
     return 0;
