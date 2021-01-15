@@ -631,7 +631,7 @@ void *srealloc(void *oldp, size_t size) {
             return nullptr;
         }
         size_t oldSize = mmapList->GetSizeOfBlockByAddress(oldp);
-        memcpy(nAddr, oldp, oldSize);
+        memcpy(nAddr, oldp, size);
         mmapList->MmapFree(oldp);
         return nAddr;
     }
