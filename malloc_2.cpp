@@ -28,17 +28,6 @@ class MallocMetadata {
 class List {
     MallocMetadata *head = nullptr;
     MallocMetadata *tail = nullptr;
-    size_t num_free_blocks = 0;
-    size_t num_free_bytes = 0;
-    size_t num_allocated_blocks = 0;
-    size_t num_allocated_bytes = 0;
-    size_t num_of_metadata = 0;
-
-    void IncreaseCounter(size_t size) {
-        num_of_metadata++;
-        num_allocated_blocks++;
-        num_allocated_bytes += size;
-    }
 
     void ReplaceTail(MallocMetadata *nTail) {
         // mark prev of new tail as the old tail
@@ -52,8 +41,7 @@ class List {
     }
 
 public:
-    List() : head(nullptr), tail(nullptr), num_free_blocks(0), num_free_bytes(0), num_allocated_blocks(0), num_allocated_bytes(0),
-             num_of_metadata(0) {}
+    List() : head(nullptr), tail(nullptr) {}
 
     void *Insert(size_t size) {
         if (head == nullptr) {
@@ -73,7 +61,6 @@ public:
                 nHead->next = nullptr;
                 head = nHead;
                 tail = nHead;
-                IncreaseCounter(size);
                 return addr;
             }
         } else {
@@ -90,7 +77,6 @@ public:
                 nTail->is_free = false;
                 nTail->mem_address = addr;
                 ReplaceTail(nTail);
-                IncreaseCounter(size);
                 return addr;
             }
         }
@@ -104,8 +90,6 @@ public:
         while (current) {
             if (current->mem_address == addr && !current->is_free) {
                 current->is_free = true;
-                num_free_blocks++;
-                num_free_bytes += current->size;
                 return;
             }
             current = current->next;
@@ -122,8 +106,6 @@ public:
             if (current->is_free && current->size >= size) {
                 // Marking the current block as used by the requestor and returning the address
                 current->is_free = false;
-                num_free_blocks--;
-                num_free_bytes -= current->size;
                 return current->mem_address;
             }
             current = current->next;
@@ -147,23 +129,51 @@ public:
     }
 
     size_t get_num_free_blocks() {
-        return num_free_blocks;
+        size_t count = 0;
+        MallocMetadata *current = head;
+        while (current) {
+            if (current->is_free) {
+                count++;
+            }
+            current = current->next;
+        }
+        return count;
     }
 
     size_t get_num_free_bytes() {
-        return num_free_bytes;
+        size_t sum = 0;
+        MallocMetadata *current = head;
+        while (current) {
+            if (current->is_free) {
+                sum += current->size;
+            }
+            current = current->next;
+        }
+        return sum;
     }
 
     size_t get_num_allocated_blocks() {
-        return num_allocated_blocks;
+        size_t sum = 0;
+        MallocMetadata *current = head;
+        while (current) {
+            sum++;
+            current = current->next;
+        }
+        return sum;
     }
 
     size_t get_num_allocated_bytes() {
-        return num_allocated_bytes;
+        size_t sum = 0;
+        MallocMetadata *current = head;
+        while (current) {
+            sum += current->size;
+            current = current->next;
+        }
+        return sum;
     }
 
     size_t get_num_metadata_bytes() {
-        return num_of_metadata * get_metadata_size();
+        return get_num_allocated_blocks() * get_metadata_size();
     }
 
     size_t get_metadata_size() {
