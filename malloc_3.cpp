@@ -380,12 +380,14 @@ public:
                 } else if (next && next->is_free && next->size + current->size + get_metadata_size() >= nSize) {
                     // next and current together are enough
                     current->next = next->next;
-                    next->next->prev = current;
-                    current->size += next->size + get_metadata_size();
                     if (next == tail) {
                         //need to change tail ptr
                         tail = current;
+                    } else {
+                        next->next->prev = current;
                     }
+                    current->size += next->size + get_metadata_size();
+
                     // No need for memcpy, data is already in place
                     return current->mem_address;
                 } else if (prev && prev->is_free && next && next->is_free &&

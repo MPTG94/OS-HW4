@@ -291,8 +291,8 @@ int main() {
     // check it for malloc2 before this test
     //malloc2_test_01();
     //malloc3_test_01();
-    malloc3_test_02();
-    //malloc3_test_03();
+    //malloc3_test_02();
+    malloc3_test_03();
 
 
     return 0;
