@@ -248,6 +248,9 @@ public:
                         if (current->next->prev) {
                             current->next->prev = prev;
                         }
+                    } else {
+                        // current is the tail, so now prev will be the tail
+                        tail = prev;
                     }
                     prev->size += current->size + get_metadata_size();
                 } else {
@@ -395,7 +398,12 @@ public:
                     // all 3 blocks together are enough
                     prev->is_free = false;
                     prev->next = next->next;
-                    next->next->prev = prev;
+                    if (next->next) {
+                        next->next->prev = prev;
+                    } else {
+                        // next is the current tail of the list, so now prev will be the tail
+                        tail = prev;
+                    }
                     prev->size += current->size + next->size + 2 * get_metadata_size();
                     // need to do memcpy
                     memcpy(prev->mem_address, oldp, current->size);
