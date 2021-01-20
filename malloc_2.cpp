@@ -237,7 +237,7 @@ void *srealloc(void *oldp, size_t size) {
         return nullptr;
     }
     // Copying data from old address to new
-    memcpy(nAddr, oldp, currentSize);
+    memmove(nAddr, oldp, currentSize);
     // Marking old address as free
     mallocList->MarkAsFree(oldp);
     return nAddr;

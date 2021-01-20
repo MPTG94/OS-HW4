@@ -406,7 +406,7 @@ public:
                     }
                     prev->size += current->size + next->size + 2 * get_metadata_size();
                     // need to do memcpy
-                    memcpy(prev->mem_address, oldp, current->size);
+                    memmove(prev->mem_address, oldp, current->size);
                     return prev->mem_address;
                 }
             }
@@ -644,7 +644,7 @@ void *srealloc(void *oldp, size_t size) {
             return nullptr;
         }
         size_t oldSize = mmapList->GetSizeOfBlockByAddress(oldp);
-        memcpy(nAddr, oldp, size);
+        memmove(nAddr, oldp, size);
         mmapList->MmapFree(oldp);
         return nAddr;
     }
@@ -677,7 +677,7 @@ void *srealloc(void *oldp, size_t size) {
         return nullptr;
     }
     // Copying data from old address to new
-    memcpy(nAddr, oldp, currentSize);
+    memmove(nAddr, oldp, currentSize);
     // Marking old address as free
     mallocList->MarkAsFree(oldp);
     return nAddr;
