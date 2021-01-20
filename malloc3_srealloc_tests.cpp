@@ -98,8 +98,7 @@ void malloc3_realloc_note_e_test(){
     sfree(third);
     sfree(fourth);
     srealloc(second,600);
-    _num_allocated_blocks();
-    _num_free_blocks();
+
     assert(_num_allocated_bytes()  == (1082));
     assert(_num_free_blocks() == 2);
     assert(_num_allocated_blocks() == 3);
@@ -160,10 +159,10 @@ int main(){
     //malloc3_realloc_note_d_test();
     // PASS
 	//malloc3_realloc_note_d2_test();
-	// bad num of blocks
+	// PASS
     //malloc3_realloc_note_e_test();
     // PASS
-    malloc3_realloc_note_f_test();
+    //malloc3_realloc_note_f_test();
 
     return 0;
 }
