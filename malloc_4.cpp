@@ -302,7 +302,7 @@ public:
     void *split(void *addr, size_t curr_size, size_t new_size) {
         // new meta data need to be at addr + size
         void *oldMetadAddr = (char *) addr - get_metadata_size();
-        MallocMetadata* old_meta_data = (MallocMetadata *) oldMetadAddr;
+        MallocMetadata *old_meta_data = (MallocMetadata *) oldMetadAddr;
         void *nMetadAddr = (char *) addr + new_size;
         MallocMetadata *new_meta_data = (MallocMetadata *) nMetadAddr;
         new_meta_data->is_free = true;
@@ -456,6 +456,9 @@ List *mmapList = (List *) sbrk(sizeof(List));
  * @return The address of the allocated block
  */
 void *smalloc(size_t size) {
+    if (size % 8 != 0) {
+        size += 8 - (size % 8);
+    }
     if (size == 0 || size > MAX_BLOCK) {
         return nullptr;
     }
@@ -493,6 +496,9 @@ void *smalloc(size_t size) {
 }
 
 void *scalloc(size_t num, size_t size) {
+    if (size % 8 != 0) {
+        size += 8 - (size % 8);
+    }
     void *addr = smalloc(num * size);
     if (addr == nullptr) {
         // allocation of block failed
@@ -516,6 +522,9 @@ void sfree(void *p) {
 }
 
 void *srealloc(void *oldp, size_t size) {
+    if (size % 8 != 0) {
+        size += 8 - (size % 8);
+    }
     if (size == 0 || size > MAX_BLOCK) {
         return nullptr;
     }
@@ -524,7 +533,7 @@ void *srealloc(void *oldp, size_t size) {
         return smalloc(size);
     }
     if (size >= MMAP_MIN_SIZE) {
-        void* nAddr = mmapList->MmapInsert(size);
+        void *nAddr = mmapList->MmapInsert(size);
         if (nAddr == nullptr) {
             return nullptr;
         }
