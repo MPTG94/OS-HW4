@@ -149,6 +149,7 @@ void malloc3_realloc_note_f_test(){
 int main(){
 
 	//RUN ONLY ONE TEST AT A TIME!!!!!!!! ^_^
+	// These have to run with a metadata of size 32 (change size_t to int)
     // PASS
     //malloc3_realloc_note_a_test();
     // PASS

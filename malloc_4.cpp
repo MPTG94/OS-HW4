@@ -299,6 +299,8 @@ public:
         }
     }
 
+    // Take block A and turn it into A -> B, need to fix the following pointers:
+    // A -> next will now be B, B -> next will now be A -> Next (and the other direction)
     void *split(void *addr, size_t curr_size, size_t new_size) {
         // new meta data need to be at addr + size
         void *oldMetadAddr = (char *) addr - get_metadata_size();
@@ -307,8 +309,16 @@ public:
         MallocMetadata *new_meta_data = (MallocMetadata *) nMetadAddr;
         new_meta_data->is_free = true;
         new_meta_data->size = curr_size - new_size - get_metadata_size();
-        new_meta_data->mem_address = new_meta_data + get_metadata_size();
-        ReplaceTail(new_meta_data);
+        new_meta_data->mem_address = (char *) new_meta_data + get_metadata_size();
+        if (old_meta_data->next) {
+            new_meta_data->next = old_meta_data->next;
+            new_meta_data->prev = old_meta_data;
+            old_meta_data->next->prev = new_meta_data;
+            old_meta_data->next = new_meta_data;
+        } else {
+            // old meta is the tail
+            ReplaceTail(new_meta_data);
+        }
         old_meta_data->size = new_size;
         return new_meta_data->mem_address;
     }
